@@ -18,15 +18,12 @@ const Wheel: React.FC<WheelProps> = ({ prizes, config, onSpinEnd, isSpinning }) 
   const activePrizes = useMemo(() => prizes.filter(p => p.enabled), [prizes]);
   const totalWeight = useMemo(() => activePrizes.reduce((sum, p) => sum + p.probability, 0), [activePrizes]);
 
-  // Pre-load images for canvas
   useEffect(() => {
     activePrizes.forEach(prize => {
       if (prize.image && !imageElements[prize.id]) {
         const img = new Image();
         img.src = prize.image;
-        img.onload = () => {
-          setImageElements(prev => ({ ...prev, [prize.id]: img }));
-        };
+        img.onload = () => setImageElements(prev => ({ ...prev, [prize.id]: img }));
       }
     });
   }, [activePrizes]);
@@ -40,63 +37,77 @@ const Wheel: React.FC<WheelProps> = ({ prizes, config, onSpinEnd, isSpinning }) 
     const size = canvas.width;
     const centerX = size / 2;
     const centerY = size / 2;
-    const radius = size / 2 - 10;
+    const radius = size / 2 - 20;
 
     ctx.clearRect(0, 0, size, size);
 
-    if (activePrizes.length === 0) {
-      ctx.fillStyle = '#1e293b';
-      ctx.beginPath();
-      ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
-      ctx.fill();
-      return;
-    }
+    // 外環木質框
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius + 15, 0, 2 * Math.PI);
+    const woodGradient = ctx.createRadialGradient(centerX, centerY, radius, centerX, centerY, radius + 15);
+    woodGradient.addColorStop(0, '#5c3d2e');
+    woodGradient.addColorStop(1, '#2d1b0d');
+    ctx.fillStyle = woodGradient;
+    ctx.fill();
+    ctx.strokeStyle = '#3d2b1f';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    if (activePrizes.length === 0) return;
 
     let startAngle = rotationRef.current;
 
     activePrizes.forEach((prize) => {
       const sliceAngle = (prize.probability / totalWeight) * 2 * Math.PI;
       
-      // Draw slice
       ctx.beginPath();
       ctx.moveTo(centerX, centerY);
       ctx.arc(centerX, centerY, radius, startAngle, startAngle + sliceAngle);
       ctx.closePath();
       ctx.fillStyle = prize.color;
       ctx.fill();
-      ctx.strokeStyle = '#ffffff22';
+      
+      // 扇形內陰影，營造紙張層次
+      ctx.strokeStyle = 'rgba(0,0,0,0.1)';
       ctx.lineWidth = 1;
       ctx.stroke();
 
-      // Draw content
       ctx.save();
       ctx.translate(centerX, centerY);
       ctx.rotate(startAngle + sliceAngle / 2);
       
-      // Draw Text
       ctx.textAlign = 'right';
-      ctx.fillStyle = 'white';
-      ctx.font = 'bold 13px Inter';
-      ctx.fillText(prize.label, radius - 45, 5);
+      ctx.fillStyle = prize.color === '#dcd7c9' ? '#2d1b0d' : '#fcfaf2';
+      ctx.font = 'bold 15px "Noto Serif TC"';
+      ctx.fillText(prize.label, radius - 55, 6);
 
-      // Draw Image if exists
       const img = imageElements[prize.id];
       if (img) {
-        ctx.drawImage(img, radius - 40, -15, 30, 30);
+        ctx.drawImage(img, radius - 50, -18, 36, 36);
       }
       
       ctx.restore();
       startAngle += sliceAngle;
     });
 
-    // Center decor
+    // 中心黃銅裝飾
     ctx.beginPath();
-    ctx.arc(centerX, centerY, 25, 0, 2 * Math.PI);
-    ctx.fillStyle = '#0f172a';
+    ctx.arc(centerX, centerY, 30, 0, 2 * Math.PI);
+    const brassGradient = ctx.createRadialGradient(centerX, centerY, 5, centerX, centerY, 30);
+    brassGradient.addColorStop(0, '#f9f3cc');
+    brassGradient.addColorStop(0.5, '#d4af37');
+    brassGradient.addColorStop(1, '#8b7355');
+    ctx.fillStyle = brassGradient;
     ctx.fill();
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#5c3d2e';
+    ctx.lineWidth = 2;
     ctx.stroke();
+    
+    // 裝飾小點
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, 4, 0, 2 * Math.PI);
+    ctx.fillStyle = '#2d1b0d';
+    ctx.fill();
   };
 
   useEffect(() => {
@@ -105,59 +116,45 @@ const Wheel: React.FC<WheelProps> = ({ prizes, config, onSpinEnd, isSpinning }) 
 
   useEffect(() => {
     if (!isSpinning || activePrizes.length === 0) return;
-
     const startTime = Date.now();
     const duration = config.duration * 1000;
     const randomVal = Math.random() * totalWeight;
     let accumulated = 0;
     let winnerIndex = 0;
-    
     for (let i = 0; i < activePrizes.length; i++) {
       accumulated += activePrizes[i].probability;
-      if (randomVal <= accumulated) {
-        winnerIndex = i;
-        break;
-      }
+      if (randomVal <= accumulated) { winnerIndex = i; break; }
     }
-
     let winnerStartWeight = 0;
     for (let i = 0; i < winnerIndex; i++) winnerStartWeight += activePrizes[i].probability;
-    const winnerEndWeight = winnerStartWeight + activePrizes[winnerIndex].probability;
-    const winnerMidAngle = ((winnerStartWeight + winnerEndWeight) / 2 / totalWeight) * 2 * Math.PI;
-
+    const winnerMidAngle = ((winnerStartWeight + activePrizes[winnerIndex].probability/2) / totalWeight) * 2 * Math.PI;
     const baseRotations = config.rotations * 2 * Math.PI;
     const directionMult = config.direction === 'cw' ? 1 : -1;
     const targetTarget = (2 * Math.PI - winnerMidAngle) - (Math.PI / 2);
     const targetRotation = directionMult * (baseRotations + (targetTarget > 0 ? targetTarget : targetTarget + 2 * Math.PI));
     const startRot = rotationRef.current;
-
     const animate = () => {
       const now = Date.now();
       const progress = Math.min((now - startTime) / duration, 1);
-      const ease = 1 - Math.pow(1 - progress, 4);
+      const ease = 1 - Math.pow(1 - progress, 5); // 更平滑的 easeOutQuint
       const currentRot = startRot + (targetRotation * ease);
       setRotation(currentRot);
       rotationRef.current = currentRot;
-
-      if (progress < 1) {
-        requestAnimationFrame(animate);
-      } else {
-        onSpinEnd(activePrizes[winnerIndex]);
-      }
+      if (progress < 1) requestAnimationFrame(animate);
+      else onSpinEnd(activePrizes[winnerIndex]);
     };
-
     animate();
   }, [isSpinning]);
 
   return (
     <div className="relative">
-      <div className="absolute top-[-15px] left-1/2 -translate-x-1/2 z-20">
-        <div className="w-8 h-12 bg-white clip-path-triangle shadow-[0_10px_20px_rgba(0,0,0,0.5)] flex items-start justify-center pt-1">
-           <div className="w-3 h-5 bg-red-600 rounded-full" />
+      {/* 復古指標 */}
+      <div className="absolute top-[-25px] left-1/2 -translate-x-1/2 z-20">
+        <div className="w-10 h-16 bg-[#fcfaf2] rounded-t-full shadow-xl flex flex-col items-center border border-[#8d7b68]">
+           <div className="w-0 h-0 border-l-[12px] border-l-transparent border-r-[12px] border-r-transparent border-t-[20px] border-t-[#9a3b3b] mt-8" />
         </div>
       </div>
-      <canvas ref={canvasRef} width={500} height={500} className="rounded-full border-[16px] border-slate-800 shadow-[0_0_60px_rgba(139,92,246,0.3)] scale-90 lg:scale-100" />
-      <style>{`.clip-path-triangle { clip-path: polygon(100% 0, 0 0, 50% 100%); }`}</style>
+      <canvas ref={canvasRef} width={540} height={540} className="rounded-full shadow-[0_25px_50px_-12px_rgba(0,0,0,0.8)]" />
     </div>
   );
 };
